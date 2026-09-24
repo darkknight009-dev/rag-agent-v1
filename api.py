@@ -362,8 +362,11 @@ def local_path_for_storage_key(key: str) -> Path:
     return STORAGE_ROOT / key
 
 
-def resolve_document_path(file_path: str) -> Path:
+def resolve_document_path(file_path: str | Path) -> Path:
     """Return a local file for extraction, downloading Supabase objects when needed."""
+    if isinstance(file_path, Path):
+        return file_path
+
     if not file_path.startswith("supabase://"):
         return Path(file_path)
 
