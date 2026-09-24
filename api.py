@@ -1414,7 +1414,12 @@ def retry_document_ingestion(
     db = get_db()
 
     try:
-        document = db.get(Document, document_id)
+        document = (
+            db.query(Document)
+            .filter(Document.id == document_id)
+            .with_for_update()
+            .first()
+        )
 
         if document is None:
             raise HTTPException(
@@ -1454,7 +1459,7 @@ def retry_document_ingestion(
             db.commit()
             db.refresh(job)
         else:
-            if job.status == "running":
+            if job.status in ("queued", "running"):
                 raise HTTPException(
                     status_code=409,
                     detail="This document is already being ingested.",
@@ -1500,6 +1505,7 @@ def delete_document(
         document = (
             db.query(Document)
             .filter(Document.filename == filename)
+            .with_for_update()
             .first()
         )
 
@@ -1507,6 +1513,19 @@ def delete_document(
             raise HTTPException(
                 status_code=404,
                 detail="Document not found",
+            )
+
+        active_job = (
+            db.query(IngestionJob)
+            .filter(IngestionJob.document_id == document.id)
+            .filter(IngestionJob.status.in_(["queued", "running"]))
+            .order_by(IngestionJob.id.desc())
+            .first()
+        )
+        if active_job is not None or document.status == "processing":
+            raise HTTPException(
+                status_code=409,
+                detail="Document ingestion is in progress. Wait for it to finish before deleting it.",
             )
 
         # Remove DB records explicitly so this also works with the older
